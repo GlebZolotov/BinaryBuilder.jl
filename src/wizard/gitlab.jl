@@ -51,7 +51,8 @@ function upload_to_gitlab_releases(repo, tag, path; attempts::Int = 3, verbose::
         res = upload_file(joinpath(path, name), repo, token)
         return Dict(
             "name" => name, 
-            "url" => "https://gitlab.com" * res["full_path"]
+            "url" => "https://gitlab.com" * res["full_path"],
+            "direct_asset_path" => name
         )
     end
     
