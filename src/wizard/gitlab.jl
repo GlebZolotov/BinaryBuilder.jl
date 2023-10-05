@@ -52,7 +52,7 @@ function upload_to_gitlab_releases(repo, tag, path; attempts::Int = 3, verbose::
         return Dict(
             "name" => name, 
             "url" => "https://gitlab.com" * res["full_path"],
-            "direct_asset_path" => name
+            "direct_asset_path" => "/$(name)"
         )
     end
     
