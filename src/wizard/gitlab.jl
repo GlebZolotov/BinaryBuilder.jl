@@ -56,17 +56,17 @@ function upload_to_gitlab_releases(repo, tag, path; attempts::Int = 3, verbose::
         )
     end
     
-    body = Dict("tag_name" => tag, "ref" => "main", "assets" => Dict("links" => links))
+    body = JSON.json(Dict("tag_name" => tag, "ref" => "main", "assets" => Dict("links" => links)))
     println(body)
     for attempt in 1:attempts
         try
             HTTP.request("POST", "https://gitlab.com/api/v4/projects/$(project_id(repo))/releases", 
                  headers=["PRIVATE-TOKEN" => token, "Content-Type" => "application/json"], 
-                 body=JSON.json(body))
+                 body=body)
             return
         catch e
             if verbose
-                @info("`gitlab api` upload step failed $(e.msg), beginning attempt #$(attempt)...")
+                @info("`gitlab api` upload step failed $(e.status) $(e.response), beginning attempt #$(attempt)...")
             end
         end
     end
