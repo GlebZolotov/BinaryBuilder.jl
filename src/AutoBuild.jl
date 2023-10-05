@@ -424,7 +424,7 @@ function build_tarballs(ARGS, src_name, src_version, sources, script,
             if verbose
                 @info("Deploying binaries to release $(tag) on $(deploy_bin_repo) via `gitlab api`...")
             end
-            upload_to_gitlab_releases(deploy_bin_repo, tag, joinpath(pwd(), "products"); verbose=verbose)
+            Wizard.upload_to_gitlab_releases(deploy_bin_repo, tag, joinpath(pwd(), "products"); verbose=verbose)
         end
     end
 
