@@ -22,6 +22,7 @@ export run_wizard, deploy
 
 include("wizard/state.jl")
 include("wizard/github.jl")
+include("wizard/gitlab.jl")
 include("wizard/yggdrasil.jl")
 include("wizard/utils.jl")
 include("wizard/obtain_source.jl")

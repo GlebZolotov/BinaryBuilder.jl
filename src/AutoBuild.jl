@@ -383,7 +383,11 @@ function build_tarballs(ARGS, src_name, src_version, sources, script,
         dependencies = [dep for dep in dependencies if is_runtime_dependency(dep)]
 
         # The location the binaries will be available from
-        bin_path = "https://github.com/$(deploy_jll_repo)/releases/download/$(tag)"
+        if !startswith(deploy_jll_repo, "https://gitlab.com/")
+            bin_path = "https://github.com/$(deploy_jll_repo)/releases/download/$(tag)"
+        else 
+            bin_path = "$(deploy_jll_repo)/-/releases/$(tag)/downloads"
+        end
 
         if !skip_build
             # Build JLL package based on output of autobuild
@@ -411,10 +415,17 @@ function build_tarballs(ARGS, src_name, src_version, sources, script,
 
     if deploy_bin && deploy_bin_repo != "local"
         # Upload the binaries
-        if verbose
-            @info("Deploying binaries to release $(tag) on $(deploy_bin_repo) via `ghr`...")
+        if !startswith(deploy_bin_repo, "https://gitlab.com/")
+            if verbose
+                @info("Deploying binaries to release $(tag) on $(deploy_bin_repo) via `ghr`...")
+            end
+            upload_to_github_releases(deploy_bin_repo, tag, joinpath(pwd(), "products"); verbose=verbose)
+        else
+            if verbose
+                @info("Deploying binaries to release $(tag) on $(deploy_bin_repo) via `gitlab api`...")
+            end
+            upload_to_gitlab_releases(deploy_bin_repo, tag, joinpath(pwd(), "products"); verbose=verbose)
         end
-        upload_to_github_releases(deploy_bin_repo, tag, joinpath(pwd(), "products"); verbose=verbose)
     end
 
     return build_output_meta
@@ -1055,44 +1066,59 @@ function get_github_author_login(repository, commit_hash; gh_auth=Wizard.github_
     end
 end
 
-# Init remote repository, and its local counterpart
-function init_jll_package(code_dir, deploy_repo;
-                          gh_auth = Wizard.github_auth(;allow_anonymous=false),
-                          gh_username = gh_get_json(DEFAULT_API, "/user"; auth=gh_auth)["login"])
-    url = "https://github.com/$(deploy_repo)"
-    try
-        # This throws if it does not exist
-        GitHub.repo(deploy_repo; auth=gh_auth)
-    catch e
-        # If it doesn't exist, create it.
-        # check whether gh_org might be a user, not an organization.
-        gh_org = dirname(deploy_repo)
-        isorg = GitHub.owner(gh_org; auth=gh_auth).typ == "Organization"
-        owner = GitHub.Owner(gh_org, isorg)
-        @info("Creating new wrapper code repo at $(url)")
+function init_jll_package(code_dir, deploy_repo)
+    if startswith(deploy_repo, "https://gitlab.com/")
+        url = deploy_repo
+        git_username = get(ENV, "GITLAB_USER", "")
+        git_token = get(ENV, "GITLAB_TOKEN", "")
+
+        if !Wizard.is_gitlab_repo_exists(url, git_token)
+            Wizard.create_gitlab_repo(url, git_token)
+        end
+
+        if !Wizard.is_gitlab_repo_exists(url, git_token)
+            throw(ErrorException("Can't create repo"))
+        end
+    else
+        url = "https://github.com/$(deploy_repo)"
+        gh_auth = Wizard.github_auth(;allow_anonymous=false)
+        git_username = gh_get_json(DEFAULT_API, "/user"; auth=git_auth)["login"]
+        git_token = gh_auth.token
+
         try
-            GitHub.create_repo(owner, basename(deploy_repo), Dict("license_template" => "mit", "has_issues" => "false"); auth=gh_auth)
-        catch create_e
-            # If creation failed, it could be because the repo was created in the meantime.
-            # Check for that; if it still doesn't exist, then freak out.  Otherwise, continue on.
+            # This throws if it does not exist
+            GitHub.repo(deploy_repo; auth=gh_auth)
+        catch e
+            # If it doesn't exist, create it.
+            # check whether gh_org might be a user, not an organization.
+            gh_org = dirname(deploy_repo)
+            isorg = GitHub.owner(gh_org; auth=gh_auth).typ == "Organization"
+            owner = GitHub.Owner(gh_org, isorg)
+            @info("Creating new wrapper code repo at $(url)")
             try
-                GitHub.repo(deploy_repo; auth=gh_auth)
-            catch
-                rethrow(create_e)
+                GitHub.create_repo(owner, basename(deploy_repo), Dict("license_template" => "mit", "has_issues" => "false"); auth=gh_auth)
+            catch create_e
+                # If creation failed, it could be because the repo was created in the meantime.
+                # Check for that; if it still doesn't exist, then freak out.  Otherwise, continue on.
+                try
+                    GitHub.repo(deploy_repo; auth=gh_auth)
+                catch
+                    rethrow(create_e)
+                end
             end
         end
     end
-
+    
     if !isdir(code_dir)
         # If it does exist, clone it down:
         @info("Cloning wrapper code repo from $(url) into $(code_dir)")
-        Wizard.with_gitcreds(gh_username, gh_auth.token) do creds
+        Wizard.with_gitcreds(git_username, git_token) do creds
             LibGit2.clone(url, code_dir; credentials=creds)
         end
     else
         # Otherwise, hard-reset to latest main:
         repo = LibGit2.GitRepo(code_dir)
-        Wizard.with_gitcreds(gh_username, gh_auth.token) do creds
+        Wizard.with_gitcreds(git_username, git_token) do creds
             LibGit2.fetch(repo; credentials=creds)
         end
         main_branch = LibGit2.lookup_branch(repo, "origin/main", true)
@@ -1581,14 +1607,22 @@ end
 
 function push_jll_package(name, build_version;
                           code_dir = joinpath(Pkg.devdir(), "$(name)_jll"),
-                          deploy_repo = "JuliaBinaryWrappers/$(name)_jll.jl",
-                          gh_auth = Wizard.github_auth(;allow_anonymous=false),
-                          gh_username = gh_get_json(DEFAULT_API, "/user"; auth=gh_auth)["login"])
+                          deploy_repo = "JuliaBinaryWrappers/$(name)_jll.jl")
+    if !startswith(deploy_repo, "https://gitlab.com/")
+        gh_auth = Wizard.github_auth(;allow_anonymous=false)
+        git_username = gh_get_json(DEFAULT_API, "/user"; auth=gh_auth)["login"]
+        git_token = gh_auth.token
+        url = "https://github.com/$(deploy_repo).git"
+    else
+        git_username = get(ENV, "GITLAB_USER", "")
+        git_token = get(ENV, "GITLAB_TOKEN", "")
+        url = deploy_repo
+    end
     # Next, push up the wrapper code repository
     wrapper_repo = LibGit2.GitRepo(code_dir)
     LibGit2.add!(wrapper_repo, ".")
     commit = LibGit2.commit(wrapper_repo, "$(name)_jll build $(build_version)")
-    Wizard.with_gitcreds(gh_username, gh_auth.token) do creds
+    Wizard.with_gitcreds(git_username, git_token) do creds
         refspecs = ["refs/heads/main"]
         # Fetch the remote repository, to have the relevant refspecs up to date.
         LibGit2.fetch(
@@ -1600,7 +1634,7 @@ function push_jll_package(name, build_version;
         LibGit2.push(
             wrapper_repo;
             refspecs=refspecs,
-            remoteurl="https://github.com/$(deploy_repo).git",
+            remoteurl=url,
             credentials=creds,
         )
     end
