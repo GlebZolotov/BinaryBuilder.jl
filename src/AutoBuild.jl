@@ -1082,7 +1082,7 @@ function init_jll_package(code_dir, deploy_repo)
     else
         url = "https://github.com/$(deploy_repo)"
         gh_auth = Wizard.github_auth(;allow_anonymous=false)
-        git_username = gh_get_json(DEFAULT_API, "/user"; auth=git_auth)["login"]
+        git_username = gh_get_json(DEFAULT_API, "/user"; auth=gh_auth)["login"]
         git_token = gh_auth.token
 
         try
