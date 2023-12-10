@@ -1130,10 +1130,12 @@ function init_jll_package(code_dir, deploy_repo)
         else
             remote_branch = "main"
         end
-        origin_main_oid = LibGit2.GitHash(main_branch)
-        LibGit2.reset!(repo, origin_main_oid, LibGit2.Consts.RESET_HARD)
-        if string(LibGit2.head_oid(repo)) != string(origin_main_oid) || remote_branch == "master"
-            LibGit2.branch!(repo, "main", string(origin_main_oid); force=true)
+        if !isnothing(main_branch)
+            origin_main_oid = LibGit2.GitHash(main_branch)
+            LibGit2.reset!(repo, origin_main_oid, LibGit2.Consts.RESET_HARD)
+            if string(LibGit2.head_oid(repo)) != string(origin_main_oid) || remote_branch == "master"
+                LibGit2.branch!(repo, "main", string(origin_main_oid); force=true)
+            end
         end
     end
 end

@@ -47,7 +47,10 @@ end
 
 function upload_to_gitlab_releases(repo, tag, path; attempts::Int = 3, verbose::Bool = false)
     token = get(ENV, "GITLAB_TOKEN", "")
-    links = map(readdir(path)) do name
+    files = filter(readdir(path)) do name
+        return !occursin("logs", name) && !occursin("+", name) 
+    end
+    links = map(files) do name
         res = upload_file(joinpath(path, name), repo, token)
         return Dict(
             "name" => name, 
